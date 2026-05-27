@@ -1,14 +1,32 @@
-name: Deploy to Salesforce
+name: Progressive Salesforce Deployment
 
 on:
   push:
     branches:
-      - main
+      - dev
+      - sandbox
+      - prod
+  pull_request:
+    branches:
+      - dev
+      - sandbox
+      - prod
   workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Environment to deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - sandbox
+          - prod
 
 jobs:
-  deploy:
+  validate:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,11 +39,66 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install --global @salesforce/cli
 
-      - name: Authenticate Dev Hub / Target Org
+      - name: Validate package structure
+        run: |
+          test -f sfdx-project.json
+          test -d force-app
+
+  resolve-environment:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    outputs:
+      target_environment: ${{ steps.resolve.outputs.target_environment }}
+    steps:
+      - name: Resolve target environment
+        id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            target_env="${{ github.event.inputs.target_environment }}"
+          else
+            case "${{ github.ref }}" in
+              refs/heads/dev)
+                target_env="dev"
+                ;;
+              refs/heads/sandbox)
+                target_env="sandbox"
+                ;;
+              refs/heads/prod)
+                target_env="prod"
+                ;;
+              *)
+                echo "Unsupported branch: ${{ github.ref }}"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "target_environment=$target_env" >> "$GITHUB_OUTPUT"
+          echo "Target environment resolved as: $target_env"
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    needs: resolve-environment
+    environment: ${{ needs.resolve-environment.outputs.target_environment }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli
+
+      - name: Authenticate target org
         shell: bash
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > sfdx_auth_url.txt
-          sf org login sfdx-url --sfdx-url-file sfdx_auth_url.txt --alias targetOrg
+          sf org login sfdx-url --sfdx-url-file sfdx_auth_url.txt --alias targetOrg --set-default
 
       - name: Deploy source
         run: sf project deploy start --source-dir force-app --target-org targetOrg --test-level RunLocalTests --wait 30
