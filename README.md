@@ -1,6 +1,6 @@
 # Salesforce Hello World Deployment Demo
 
-This repository contains a minimal Salesforce DX project you can deploy with GitHub Actions.
+This repository contains a minimal Salesforce DX project with progressive deployment using GitHub Actions.
 
 ## What is included
 
@@ -9,21 +9,36 @@ This repository contains a minimal Salesforce DX project you can deploy with Git
 - Lightning Web Component: `helloWorld`
 - GitHub workflow: `.github/workflows/deploy.yml`
 
-## One-time setup
+## Progressive deployment setup (dev -> sandbox -> prod)
 
-1. Connect your Salesforce org locally:
-   - `sf org login web --alias targetOrg`
-2. Generate auth URL:
-   - `sf org display --verbose --target-org targetOrg`
-3. Copy the `Sfdx Auth Url` value.
-4. In GitHub repo settings, create secret:
-   - Name: `SFDX_AUTH_URL`
-   - Value: paste the auth URL
+Create three GitHub Environments in your repository:
 
-## Deploy via GitHub Actions
+- `dev`
+- `sandbox`
+- `prod`
 
-1. Push code to `main` branch, or run the workflow manually from Actions tab.
-2. Workflow authenticates using `SFDX_AUTH_URL` and deploys `force-app`.
+For each environment, add one secret with the same name:
+
+- Secret name: `SFDX_AUTH_URL`
+- Secret value: auth URL of that environment's Salesforce org
+
+### How to get auth URL for each org
+
+1. Login to that org:
+   - `sf org login web --alias <aliasName>`
+2. Get the auth URL:
+   - `sf org display --verbose --target-org <aliasName>`
+3. Copy only `Sfdx Auth Url` value and paste into matching GitHub Environment secret.
+
+## Branch strategy
+
+- Push to `dev` -> deploy to GitHub Environment `dev`
+- Push to `sandbox` -> deploy to GitHub Environment `sandbox`
+- Push to `prod` -> deploy to GitHub Environment `prod`
+
+You can also run workflow manually and pick `dev`, `sandbox`, or `prod`.
+
+Pull requests to `dev`, `sandbox`, or `prod` run a basic validation job.
 
 ## Verify in Salesforce
 
@@ -32,3 +47,8 @@ This repository contains a minimal Salesforce DX project you can deploy with Git
 3. Edit Home Page (or App Page).
 4. Drag `helloWorld` component onto page and save.
 5. Open the page and confirm greeting appears.
+
+## Important note about scratch orgs
+
+Scratch orgs are temporary and are best for development/testing, not long-lived stage/prod environments.
+For stable stage/prod pipelines, prefer Sandboxes or persistent orgs.
